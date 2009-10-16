@@ -39,8 +39,6 @@ sub handle_request {
   my $self = shift;
   my $cgi  = shift;
 
-  my $ft = File::Type->new();
-
   my $m = $self->mason_handler;
   unless ( $m->interp->comp_exists( $cgi->path_info ) ) {
     my $path = $cgi->path_info;
@@ -61,6 +59,7 @@ sub handle_request {
       $self->handle_error($error);
     }
   } elsif ( -e $path ) {
+    my $ft = File::Type->new();
     my $type = $ft->mime_type($path);
 
     print STDOUT "HTTP/1.0 200 OK\r\n";
