@@ -1,0 +1,7 @@
+bin/pillbug
+INSTALL
+lib/Devel/Pillbug.pm
+Makefile.PL
+MANIFEST
+README
+t/Pillbug.t
