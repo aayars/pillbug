@@ -2,10 +2,10 @@ use ExtUtils::MakeMaker;
 
 my $prereqs = {
   HTTP::Server::Simple::Mason => 0.13,
-  File::HomeDir               => 0.86,
-  File::Type                  => 0.22,
-  Net::Server::PreFork        => 0.97,
-  Test::More                  => 0.86,
+  File::HomeDir  => 0.86,
+  File::Type     => 0.22,
+  Net::Server    => 0.97,
+  Test::More     => 0.86,
 
 };
 
