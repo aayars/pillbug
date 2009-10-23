@@ -3,7 +3,9 @@ package Devel::Pillbug::MasonHandler;
 use base qw| HTML::Mason::CGIHandler |;
 
 #
-# Parent does funny things with headers. Delegate to H::M::R instead.
+# Parent does funny things with eval before we can.
+#
+# Delegate to H::M::R instead.
 #
 sub exec {
   my $self = shift;
