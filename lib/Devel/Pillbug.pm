@@ -86,7 +86,8 @@ sub _handle_mason_request {
   #
   print "HTTP/1.0 ";
   print $r->http_header;
-  print $buffer;
+
+  print $buffer if $buffer;
 }
 
 sub handler_class {
