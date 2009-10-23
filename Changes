@@ -1,1 +1,9 @@
+2009-10-21: .003
+  - Update examples
+  - Avoid handle_cgi_request entirely, it makes it impossible to reap status
+  - CLI wrapper defaults to using hostname() for its server name
+
+2009-10-19: .002
+  - Remove unused statement, edit perldoc
+
 2009-10-16: .001 - Hello World
