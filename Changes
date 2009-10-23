@@ -1,4 +1,4 @@
-2009-10-21: .003
+2009-10-22: .003
   - Update examples
   - Avoid handle_cgi_request entirely, it makes it impossible to reap status
   - CLI wrapper defaults to using hostname() for its server name
