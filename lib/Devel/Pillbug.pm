@@ -276,7 +276,7 @@ Returns the currently active L<HTML::Mason::Request> subclass.
 Sets the server type to the specified HTML::Mason::Request subclass,
 if one is supplied as an argument.
 
-Default value is L<Devel::Ladybug::MasonHandler>.
+Default value is L<Devel::Pillbug::MasonHandler>.
 
 =back
 
