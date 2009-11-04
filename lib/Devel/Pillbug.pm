@@ -1,5 +1,8 @@
 package Devel::Pillbug::MasonHandler;
 
+use strict;
+use warnings;
+
 use base qw| HTML::Mason::CGIHandler |;
 
 #
@@ -15,42 +18,90 @@ sub exec {
 
 package Devel::Pillbug;
 
-our $VERSION = 0.004;
+our $VERSION = 0.005;
 
 use strict;
 use warnings;
 
-use base qw/HTTP::Server::Simple::Mason/;
-
 use File::HomeDir;
 use File::Type;
 
+use base qw| HTTP::Server::Simple::Mason |;
+
+use constant DefaultServerType   => "Net::Server::PreFork";
+use constant DefaultHandlerClass => "Devel::Pillbug::MasonHandler";
+
+our $serverType   = DefaultServerType;
+our $handlerClass = DefaultHandlerClass;
+
+#
+#
+#
+sub net_server {
+  my $class         = shift;
+  my $newServerType = shift;
+
+  if ($newServerType) {
+    if ( !UNIVERSAL::isa( $newServerType, "Net::Server" ) ) {
+      warn "net_server() requires a Net::Server subclass";
+    }
+
+    $serverType = $newServerType;
+  }
+
+  return $serverType;
+}
+
+#
+#
+#
+sub handler_class {
+  my $class           = shift;
+  my $newHandlerClass = shift;
+
+  if ($newHandlerClass) {
+    if ( !UNIVERSAL::isa( $newHandlerClass, "HTML::Mason::Request" ) ) {
+      warn "handler_class() requires a HTML::Mason::Request subclass";
+    }
+
+    $handlerClass = $newHandlerClass;
+  }
+
+  return $handlerClass;
+}
+
+#
+#
+#
 sub docroot {
-  my $self = shift;
+  my $self    = shift;
   my $docroot = shift;
 
   $self->{_docroot} = $docroot if $docroot;
 
-  return $self->{_docroot} if $self->{_docroot};
+  if ( !$self->{_docroot} ) {
+    my $home = File::HomeDir->my_home;
 
-  my $home = File::HomeDir->my_home;
+    my $pubHtml = join( "/", $home, "public_html" );
+    my $sites   = join( "/", $home, "Sites" );
 
-  my $pubHtml = join( "/", $home, "public_html" );
-  my $sites   = join( "/", $home, "Sites" );
+    $self->{_docroot} = ( -d $sites ) ? $sites : $pubHtml;
+  }
 
-  $self->{_docroot} = ( -d $sites ) ? $sites : $pubHtml;
+  if ( !-d $self->{_docroot} ) {
+    warn "docroot $self->{_docroot} is not a usable directory";
+  }
 
   return $self->{_docroot};
 }
 
+#
+#
+#
 sub mason_config {
   my $self = shift;
 
   return ( comp_root => $self->docroot() );
-}
-
-sub net_server {
-  return "Net::Server::PreFork";
 }
 
 #
@@ -100,10 +151,6 @@ sub _handle_mason_request {
   print $header;
 
   print $buffer if $buffer;
-}
-
-sub handler_class {
-  return "Devel::Pillbug::MasonHandler";
 }
 
 #
@@ -158,7 +205,7 @@ __END__
 
 =head1 NAME
 
-Devel::Pillbug - Instant HTML::Mason server for dev environments
+Devel::Pillbug - Tiny HTML::Mason server
 
 =head1 SYNOPSIS
 
@@ -196,18 +243,44 @@ Do it in Perl:
 
 =head1 DESCRIPTION
 
-Devel::Pillbug is a simple HTML::Mason server for dev environments.
+Devel::Pillbug is a tiny embedded L<HTML::Mason> server, based on
+L<HTTP::Server::Simple::Mason>. It is designed for zero configuration
+and easy install from CPAN.
 
-It is designed for zero configuration and easy install from CPAN.
-
-Devel::Pillbug uses the "public_html" or "Sites" directory of the
-user who launched the process for its document root. Files ending
-in "html" are treated as Mason components.
+The "public_html" or "Sites" directory of the user who launched the
+process will be used for the document root. Files ending in "html"
+are treated as Mason components.
 
 =head1 METHODS
 
 See L<HTTP::Server::Simple> and L<HTTP::Server::Simple::Mason> for
 inherited methods.
+
+=head2 CLASS METHODS
+
+=over 4
+
+=item * $class->net_server($newServerType);
+
+Returns the currently active L<Net::Server> subclass.
+
+Sets the server type to the specified Net::Server subclass, if one
+is supplied as an argument.
+
+Default value is L<Net::Server::PreFork>.
+
+=item * $class->handler_class($newHandlerClass);
+
+Returns the currently active L<HTML::Mason::Request> subclass.
+
+Sets the server type to the specified HTML::Mason::Request subclass,
+if one is supplied as an argument.
+
+Default value is L<Devel::Ladybug::MasonHandler>.
+
+=back
+
+=head2 INSTANCE METHODS
 
 =over 4
 
@@ -227,7 +300,7 @@ must be able to bind to its listen port (default 8080).
 
 =head1 VERSION
 
-This document is for version .004 of Devel::Pillbug.
+This document is for version .005 of Devel::Pillbug.
 
 =head1 AUTHOR
 
