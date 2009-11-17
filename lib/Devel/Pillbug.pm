@@ -31,6 +31,9 @@ use base qw| HTTP::Server::Simple::Mason |;
 use constant DefaultServerType   => "Net::Server::PreFork";
 use constant DefaultHandlerClass => "Devel::Pillbug::MasonHandler";
 
+use constant DefaultIndexName => "index";
+use constant DefaultCompExt   => "html";
+
 our $serverType   = DefaultServerType;
 our $handlerClass = DefaultHandlerClass;
 
@@ -82,8 +85,8 @@ sub docroot {
   if ( !$self->{_docroot} ) {
     my $home = File::HomeDir->my_home;
 
-    my $pubHtml = join( "/", $home, "public_html" );
-    my $sites   = join( "/", $home, "Sites" );
+    my $pubHtml = join "/", $home, "public_html";
+    my $sites   = join "/", $home, "Sites";
 
     $self->{_docroot} = ( -d $sites ) ? $sites : $pubHtml;
   }
@@ -93,6 +96,49 @@ sub docroot {
   }
 
   return $self->{_docroot};
+}
+
+#
+#
+#
+sub allow_index {
+  my $self = shift;
+
+  $self->{_allow_index} ||= 0;
+
+  if ( scalar(@_) ) {
+    $self->{_allow_index} = $_[0] ? 1 : 0;
+  }
+
+  return $self->{_allow_index};
+}
+
+#
+#
+#
+sub index_name {
+  my $self  = shift;
+  my $index = shift;
+
+  $self->{_index} = $index if $index;
+
+  $self->{_index} ||= DefaultIndexName;
+
+  return $self->{_index};
+}
+
+#
+#
+#
+sub comp_ext {
+  my $self = shift;
+  my $ext  = shift;
+
+  $self->{_ext} = $ext if $ext;
+
+  $self->{_ext} ||= DefaultCompExt;
+
+  return $self->{_ext};
 }
 
 #
@@ -153,48 +199,199 @@ sub _handle_mason_request {
   print $buffer if $buffer;
 }
 
+sub _handle_directory_request {
+  my $self = shift;
+  my $r    = shift;
+
+  my $fsPath   = shift;
+  my $compPath = shift;
+
+  print "HTTP/1.0 200 OK\r\n";
+  print "Content-Type: text/html\r\n";
+  print "\r\n";
+  print "<h1>Index of $compPath</h1>\r\n";
+  print "<ul>\r\n";
+
+  my %conf = $self->mason_config;
+
+  for ( <$fsPath/*> ) {
+    my $path = $_;
+    $path =~ s/^$conf{comp_root}$compPath\///;
+
+    print "<li> <a href=\"$path\">$path</a></li>\r\n";
+  }
+
+  print "</ul>\r\n";
+}
+
+sub _handle_document_request {
+  my $self = shift;
+  my $r    = shift;
+
+  my $fsPath   = shift;
+  my $compPath = shift;
+
+  my $ft   = File::Type->new();
+  my $type = $ft->mime_type($fsPath);
+
+  my @out;
+
+  eval {
+    open( IN, "<", $fsPath ) || die $!;
+    while (<IN>) { push @out, $_ }
+    close(IN);
+  };
+
+  if ( $@ ) {
+    return $self->_handle_error($r, $@);
+  }
+
+  print "HTTP/1.0 200 OK\r\n";
+  print "Content-Type: $type\r\n";
+  print "\r\n";
+
+  while (@out) { print shift @out }
+}
+
+sub _handle_notfound_request {
+  my $self = shift;
+  my $r    = shift;
+
+  my $fsPath   = shift;
+  my $compPath = shift;
+
+  print "HTTP/1.0 404 Not Found\r\n";
+  print "Content-Type: text/html\r\n";
+  print "\r\n";
+  print "<h1>Not Found</h1>\r\n";
+  print "<p>The requested URL $compPath was not found on this server.\r\n";
+}
+
+sub _handle_cgi_request {
+  my $self = shift;
+  my $r    = shift;
+
+  my $fsPath   = shift;
+  my $compPath = shift;
+
+  my @out;
+
+  my $probablyServedHeaders;
+
+  eval {
+    my $prevLine = "";
+
+    open( CGI, "$fsPath 2>&1 |" ) || die $!;
+
+    while (<CGI>) {
+      if ( $_ eq "\r\n" && $prevLine =~ /^\S+:\s.*\r\n$/ ) {
+        $probablyServedHeaders++;
+      }
+
+      push @out, $_;
+
+      $prevLine = $_;
+    }
+
+    close(CGI) || die join("", @out);
+
+    undef $probablyServedHeaders if !$out[0] || $out[0] !~ /\r\n$/;
+  };
+
+  if ($@) {
+    return $self->_handle_error($r, $@);
+  }
+
+  print "HTTP/1.0 200 OK\r\n";
+
+  if ( !$probablyServedHeaders ) {
+    print "Content-type: text/html\r\n";
+    print "\r\n";
+  }
+
+  while (@out) { print shift @out }
+}
+
+sub _handle_error {
+  my $self = shift;
+  my $r    = shift;
+
+  my $err = shift;
+
+  $err =~ s/at \S+ line \d+.*//;
+
+  print "HTTP/1.0 500 Internal Server Error\r\n";
+  print "Content-type: text/html\r\n";
+  print "\r\n";
+  print "<h1>Internal Server Error</h1>\r\n";
+  print "<p>The server could not complete your request. The error was:</p>\r\n";
+  print "<p>$err</p>\r\n";
+}
+
+sub _handle_directory_redirect {
+  my $self = shift;
+  my $compPath = shift;
+
+  my $url = sprintf 'http://%s:%s%s/', $self->host, $self->port, $compPath;
+
+  print "HTTP/1.0 302 Moved\r\n";
+  print "Location: $url\r\n";
+  print "\r\n";
+  print "<h1>Moved</h1>\r\n";
+  print "<p>The document is available <a href=\"$url\">here</a>.</p>\r\n";
+}
+
 #
-# Sombunall of this is from H::S::S::Mason
+# Adapted from H::S::S::Mason
 #
 sub handle_request {
   my $self = shift;
-  my $cgi  = shift;
-
-  my $m = $self->mason_handler;
-  unless ( $m->interp->comp_exists( $cgi->path_info ) ) {
-    my $path = $cgi->path_info;
-    $path .= '/' unless $path =~ m{/$};
-    $path .= 'index.html';
-    $cgi->path_info($path)
-      if $m->interp->comp_exists($path);
-  }
+  my $r    = shift;
 
   local $@;
 
   my %conf = $self->mason_config;
-  my $path = join( "", $conf{comp_root}, $cgi->path_info );
+  my $m    = $self->mason_handler;
 
-  if ( !-e $path ) {
-    print "HTTP/1.0 404 Not Found\r\n";
-    print "Content-Type: text/html\r\n";
-    print "\r\n";
-    print "<h1>Not Found</h1>\r\n";
+  my $compPath = $r->path_info;
+  my $fsPath = join "", $conf{comp_root}, $compPath;
 
-  } elsif ( $path =~ /html$/ ) {
-    return $self->_handle_mason_request( $cgi, $path );
+  my $ext = $self->comp_ext;
+
+  my $indexFilename = join ".", $self->index_name, $ext;
+
+  if ( -d $fsPath
+    && $compPath !~ m{/$}
+    && ( -e join( "/", $fsPath, $indexFilename ) || $self->allow_index ) )
+  {
+    return $self->_handle_directory_redirect($compPath);
+
+  } elsif ( -d $fsPath ) {
+    my $indexPath = join "/", $fsPath, $indexFilename;
+
+    if ( -e $indexPath ) {
+      $compPath .= $indexFilename;
+      $fsPath   .= $indexFilename;
+
+      $r->path_info($compPath);
+    }
+  }
+
+  if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) ) {
+    $self->_handle_mason_request( $r, $fsPath, $compPath );
+
+  } elsif ( $self->allow_index && -d $fsPath ) {
+    $self->_handle_directory_request( $r, $fsPath, $compPath );
+
+  } elsif ( -e $fsPath && $fsPath =~ /cgi$/ ) {
+    $self->_handle_cgi_request( $r, $fsPath, $compPath );
+
+  } elsif ( !-d $fsPath && -e $fsPath ) {
+    $self->_handle_document_request( $r, $fsPath, $compPath );
 
   } else {
-    my $ft   = File::Type->new();
-    my $type = $ft->mime_type($path);
+    $self->_handle_notfound_request( $r, $fsPath, $compPath );
 
-    print "HTTP/1.0 200 OK\r\n";
-    print "Content-Type: $type\r\n";
-    print "\r\n";
-    open( IN, "<", $path );
-    while (<IN>) {
-      print $_;
-    }
-    close(IN);
   }
 }
 
@@ -274,7 +471,7 @@ Default value is L<Net::Server::PreFork>.
 Returns the currently active L<HTML::Mason::Request> subclass.
 
 Sets the server type to the specified HTML::Mason::Request subclass,
-if one is supplied as an argument.
+if supplied as an argument.
 
 Default value is L<Devel::Pillbug::MasonHandler>.
 
@@ -288,8 +485,27 @@ Default value is L<Devel::Pillbug::MasonHandler>.
 
 Returns the currently active docroot.
 
-The server will set its docroot to the received path, if one is
+The server will set its docroot to the received path, if
 supplied as an argument.
+
+=item * $self->index_name($name);
+
+Returns currently used index name, without extension (default is
+"index").
+
+Sets this to the received name, if supplied as an argument.
+
+=item * $self->comp_ext($extension);
+
+Sets the file extension used for Mason components (default is "html")
+
+=item * $self->allow_index($bool);
+
+Returns the current allowed state for directory indexes.
+
+Sets this to the received state, if supplied as an argument.
+
+0 = Off, 1 = On
 
 =back
 

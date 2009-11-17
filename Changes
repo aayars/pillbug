@@ -1,3 +1,8 @@
+.005
+  - Make net_server and handler_class methods work as setters
+  - Add setters for index filename and default extension
+  - Other misc cleanup and doc work
+
 2009-11-02: .004
   - Add docroot() method
   - Add arg parsing to pillbug script
