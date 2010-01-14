@@ -267,51 +267,6 @@ sub _handle_notfound_request {
   print "<p>The requested URL $compPath was not found on this server.\r\n";
 }
 
-sub _handle_cgi_request {
-  my $self = shift;
-  my $r    = shift;
-
-  my $fsPath   = shift;
-  my $compPath = shift;
-
-  my @out;
-
-  my $probablyServedHeaders;
-
-  eval {
-    my $prevLine = "";
-
-    open( CGI, "$fsPath 2>&1 |" ) || die $!;
-
-    while (<CGI>) {
-      if ( $_ eq "\r\n" && $prevLine =~ /^\S+:\s.*\r\n$/ ) {
-        $probablyServedHeaders++;
-      }
-
-      push @out, $_;
-
-      $prevLine = $_;
-    }
-
-    close(CGI) || die join("", @out);
-
-    undef $probablyServedHeaders if !$out[0] || $out[0] !~ /\r\n$/;
-  };
-
-  if ($@) {
-    return $self->_handle_error($r, $@);
-  }
-
-  print "HTTP/1.0 200 OK\r\n";
-
-  if ( !$probablyServedHeaders ) {
-    print "Content-type: text/html\r\n";
-    print "\r\n";
-  }
-
-  while (@out) { print shift @out }
-}
-
 sub _handle_error {
   my $self = shift;
   my $r    = shift;
@@ -382,9 +337,6 @@ sub handle_request {
 
   } elsif ( $self->allow_index && -d $fsPath ) {
     $self->_handle_directory_request( $r, $fsPath, $compPath );
-
-  } elsif ( -e $fsPath && $fsPath =~ /cgi$/ ) {
-    $self->_handle_cgi_request( $r, $fsPath, $compPath );
 
   } elsif ( !-d $fsPath && -e $fsPath ) {
     $self->_handle_document_request( $r, $fsPath, $compPath );
@@ -485,7 +437,7 @@ Default value is L<Devel::Pillbug::MasonHandler>.
 
 Returns the currently active docroot.
 
-The server will set its docroot to the received path, if
+The server will set its docroot to the received absolute path, if
 supplied as an argument.
 
 =item * $self->index_name($name);
@@ -524,7 +476,7 @@ Alex Ayars <pause@nodekit.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009, Alex Ayars <pause@nodekit.org>
+Copyright (C) 2010, Alex Ayars <pause@nodekit.org>
 
 This program is free software; you can redistribute it and/or modify
 it under the same terms as Perl 5.10.0 or later. See:
