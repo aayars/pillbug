@@ -18,7 +18,7 @@ sub exec {
 
 package Devel::Pillbug;
 
-our $VERSION = 0.005;
+our $VERSION = 0.006;
 
 use strict;
 use warnings;
@@ -171,19 +171,22 @@ sub _handle_mason_request {
     args        => [ $cgi->Vars ],
     cgi_request => $r,
     out_method  => \$buffer,
+    error_mode  => "fatal",
   );
 
   $r->{http_header_sent} = 1;
 
   $m->interp->set_global( '$r', $r );
 
-  HTML::Mason::Request::exec($req);
+  eval { $req->exec };
 
   #
   #
   #
   if ( $@ && ( !$r->status || ( $r->status !~ /^302/ ) ) ) {
     $r->status("500 Internal Server Error");
+
+    return $self->_handle_error($r, $@);
   } elsif ( !$r->status ) {
     $r->status("200 OK");
   }
@@ -468,7 +471,7 @@ must be able to bind to its listen port (default 8080).
 
 =head1 VERSION
 
-This document is for version .005 of Devel::Pillbug.
+This document is for version .006 of Devel::Pillbug.
 
 =head1 AUTHOR
 
