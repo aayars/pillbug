@@ -159,26 +159,27 @@ sub _handle_mason_request {
   my $path = shift;
 
   my $r = HTML::Mason::FakeApache->new( cgi => $cgi );
-
-  my $m = $self->mason_handler;
-
-  my $comp = $m->interp->make_component( comp_file => $path );
-
   my $buffer;
 
-  my $req = $m->interp->make_request(
-    comp        => $comp,
-    args        => [ $cgi->Vars ],
-    cgi_request => $r,
-    out_method  => \$buffer,
-    error_mode  => "fatal",
-  );
+  eval {
+    my $m = $self->mason_handler;
 
-  $r->{http_header_sent} = 1;
+    my $comp = $m->interp->make_component( comp_file => $path );
 
-  $m->interp->set_global( '$r', $r );
+    my $req = $m->interp->make_request(
+      comp        => $comp,
+      args        => [ $cgi->Vars ],
+      cgi_request => $r,
+      out_method  => \$buffer,
+      error_mode  => "fatal",
+    );
 
-  eval { $req->exec };
+    $r->{http_header_sent} = 1;
+
+    $m->interp->set_global( '$r', $r );
+
+    $req->exec;
+  };
 
   #
   #
@@ -277,6 +278,8 @@ sub _handle_error {
   my $err = shift;
 
   $err =~ s/at \S+ line \d+.*//;
+
+  $err = HTML::Entities::encode_entities($err);
 
   print "HTTP/1.0 500 Internal Server Error\r\n";
   print "Content-type: text/html\r\n";
