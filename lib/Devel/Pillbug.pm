@@ -6,9 +6,11 @@ use warnings;
 use base qw| HTML::Mason::CGIHandler |;
 
 #
-# Parent does funny things with eval before we can.
+# CGIHandler does funny things with eval before we can check on the
+# result code, which makes it hard or impossible to reliably report
+# on errors.
 #
-# Delegate to H::M::R instead.
+# Avoid this by delegating to H::M::R's exec method instead.
 #
 sub exec {
   my $self = shift;
@@ -24,7 +26,45 @@ use strict;
 use warnings;
 
 use File::HomeDir;
-use File::Type;
+use Media::Type::Simple;
+
+#
+# Media::Type::Simple's internal use of a cached filehandle makes
+# it not usable when forking.
+#
+# Sadly, Media::Type::Simple is currently the best thing going on CPAN
+# in terms of guessing MIME types from file extensions, so... until
+# its author applies a fix for this very common problem (or something
+# better comes along), I am adapting Jos Boumans's workaround from
+# rt.cpan.org #46474:
+#
+do {
+  no strict "refs";
+  no warnings "redefine";
+
+  ${"Media::Type::Simple::Default"} = undef;
+
+  *{"Media::Type::Simple::new"} = sub {
+    my $class = shift;
+    my $self = { types => {}, extens => {}, };
+
+    bless $self, $class;
+
+    if (@_) {
+      my $fh = shift;
+      return $self->add_types_from_file($fh);
+    } else {
+      my $offset = tell Media::Type::Simple::DATA;
+
+      $Media::Type::Simple::Default =
+        $self->add_types_from_file( \*Media::Type::Simple::DATA );
+
+      seek Media::Type::Simple::DATA, $offset, 0;
+
+      return clone $Media::Type::Simple::Default;
+    }
+  }
+};
 
 use base qw| HTTP::Server::Simple::Mason |;
 
@@ -167,11 +207,12 @@ sub _handle_mason_request {
     my $comp = $m->interp->make_component( comp_file => $path );
 
     my $req = $m->interp->make_request(
-      comp        => $comp,
-      args        => [ $cgi->Vars ],
-      cgi_request => $r,
-      out_method  => \$buffer,
-      error_mode  => "fatal",
+      comp         => $comp,
+      args         => [ $cgi->Vars ],
+      cgi_request  => $r,
+      out_method   => \$buffer,
+      error_mode   => "fatal",
+      error_format => "text",
     );
 
     $r->{http_header_sent} = 1;
@@ -187,7 +228,7 @@ sub _handle_mason_request {
   if ( $@ && ( !$r->status || ( $r->status !~ /^302/ ) ) ) {
     $r->status("500 Internal Server Error");
 
-    return $self->_handle_error($r, $@);
+    return $self->_handle_error( $r, $@ );
   } elsif ( !$r->status ) {
     $r->status("200 OK");
   }
@@ -213,19 +254,71 @@ sub _handle_directory_request {
   print "HTTP/1.0 200 OK\r\n";
   print "Content-Type: text/html\r\n";
   print "\r\n";
-  print "<h1>Index of $compPath</h1>\r\n";
-  print "<ul>\r\n";
+
+  $self->_pretty_html_header();
+
+  print "<h1>Index of $compPath</h1>\n";
+
+  print "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"2\">\n";
+  print "  <tr>\n";
+  print "    <td>Name</td>\n";
+  print "    <td>Type</td>\n";
+  print "    <td>Last Modified</td>\n";
+  print "    <td>Size</td>\n";
+  print "  </tr>\n";
 
   my %conf = $self->mason_config;
 
-  for ( <$fsPath/*> ) {
+  my @files;
+
+  if ( $compPath ne "/" ) { push @files, ".." }
+
+  for (<$fsPath/*>) { push @files, $_ }
+
+  for (@files) {
     my $path = $_;
+
+    my @stat = stat($path);
+
+    my $type;
+    my $size;
+
+    if ( -d $path ) {
+      $path .= '/';
+      $type = "directory";
+      $size = "-";
+    } else {
+      my $ext = $path;
+      $ext =~ s/.*\.//;
+      my $o = Media::Type::Simple->new();
+      eval {
+        $type = $o->type_from_ext($ext);
+      };
+      $type ||= "application/octet-stream";
+      $size = $stat[7];
+    }
+
     $path =~ s/^$conf{comp_root}$compPath\///;
 
-    print "<li> <a href=\"$path\">$path</a></li>\r\n";
+    my @time = localtime($stat[9]);
+    my $time = sprintf(
+      '%i-%02d-%02d %02d:%02d:%02d %s',
+      $time[5] + 1900, $time[4] + 1, $time[3],
+      $time[2], $time[1], $time[0],
+      POSIX::strftime( '%Z', @time )
+    );
+
+    print "  <tr>\n";
+    print "    <td><a href=\"$path\">$path</a></td>\n";
+    print "    <td>$type</td>\n";
+    print "    <td>$time</td>\n";
+    print "    <td>${ size }</td>\n";
+    print "  </tr>\n";
   }
 
-  print "</ul>\r\n";
+  print "</table>\n";
+
+  $self->_pretty_html_footer();
 }
 
 sub _handle_document_request {
@@ -235,8 +328,14 @@ sub _handle_document_request {
   my $fsPath   = shift;
   my $compPath = shift;
 
-  my $ft   = File::Type->new();
-  my $type = $ft->mime_type($fsPath);
+  my $ext = $fsPath;
+  $ext =~ s/.*\.//;
+  my $o    = Media::Type::Simple->new();
+  my $type;
+  eval {
+    $type = $o->type_from_ext($ext);
+  };
+  $type ||= "application/octet-stream";
 
   my @out;
 
@@ -246,8 +345,8 @@ sub _handle_document_request {
     close(IN);
   };
 
-  if ( $@ ) {
-    return $self->_handle_error($r, $@);
+  if ($@) {
+    return $self->_handle_error( $r, $@ );
   }
 
   print "HTTP/1.0 200 OK\r\n";
@@ -267,8 +366,13 @@ sub _handle_notfound_request {
   print "HTTP/1.0 404 Not Found\r\n";
   print "Content-Type: text/html\r\n";
   print "\r\n";
-  print "<h1>Not Found</h1>\r\n";
-  print "<p>The requested URL $compPath was not found on this server.\r\n";
+
+  $self->_pretty_html_header();
+
+  print "<h1>Not Found</h1>\n";
+  print "<p>The requested URL $compPath was not found on this server.\n";
+
+  $self->_pretty_html_footer();
 }
 
 sub _handle_error {
@@ -277,20 +381,25 @@ sub _handle_error {
 
   my $err = shift;
 
-  $err =~ s/at \S+ line \d+.*//;
+  # $err =~ s/at \S+ line \d+.*//;
 
   $err = HTML::Entities::encode_entities($err);
 
   print "HTTP/1.0 500 Internal Server Error\r\n";
   print "Content-type: text/html\r\n";
   print "\r\n";
-  print "<h1>Internal Server Error</h1>\r\n";
-  print "<p>The server could not complete your request. The error was:</p>\r\n";
-  print "<p>$err</p>\r\n";
+
+  $self->_pretty_html_header();
+
+  print "<h1>Internal Server Error</h1>\n";
+  print "<p>The server could not complete your request. The error was:</p>\n";
+  print "<pre>$err</pre>\n";
+
+  $self->_pretty_html_footer();
 }
 
 sub _handle_directory_redirect {
-  my $self = shift;
+  my $self     = shift;
   my $compPath = shift;
 
   my $url = sprintf 'http://%s:%s%s/', $self->host, $self->port, $compPath;
@@ -298,8 +407,13 @@ sub _handle_directory_redirect {
   print "HTTP/1.0 302 Moved\r\n";
   print "Location: $url\r\n";
   print "\r\n";
-  print "<h1>Moved</h1>\r\n";
-  print "<p>The document is available <a href=\"$url\">here</a>.</p>\r\n";
+
+  $self->_pretty_html_header();
+
+  print "<h1>Moved</h1>\n";
+  print "<p>The document is available <a href=\"$url\">here</a>.</p>\n";
+
+  $self->_pretty_html_footer();
 }
 
 #
@@ -338,19 +452,97 @@ sub handle_request {
     }
   }
 
-  if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) ) {
-    $self->_handle_mason_request( $r, $fsPath, $compPath );
+  eval {
+    if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) )
+    {
+      $self->_handle_mason_request( $r, $fsPath, $compPath );
 
-  } elsif ( $self->allow_index && -d $fsPath ) {
-    $self->_handle_directory_request( $r, $fsPath, $compPath );
+    } elsif ( $self->allow_index && -d $fsPath ) {
+      $self->_handle_directory_request( $r, $fsPath, $compPath );
 
-  } elsif ( !-d $fsPath && -e $fsPath ) {
-    $self->_handle_document_request( $r, $fsPath, $compPath );
+    } elsif ( !-d $fsPath && -e $fsPath ) {
+      $self->_handle_document_request( $r, $fsPath, $compPath );
 
-  } else {
-    $self->_handle_notfound_request( $r, $fsPath, $compPath );
+    } else {
+      $self->_handle_notfound_request( $r, $fsPath, $compPath );
 
+    }
+  };
+
+  if ($@) {
+    return $self->_handle_error( $r, $@ );
   }
+}
+
+sub _pretty_html_header {
+  my $self   = shift;
+  my $header = shift;
+
+  if ($header) {
+    $self->{_html_header} = $header;
+
+    return;
+  }
+
+  if ( defined $self->{_html_header} ) {
+    print $self->{_html_header};
+
+    return;
+  }
+
+  print "<html>\n";
+  print "<head>\n";
+  print "<style>\n";
+  print "  body {\n";
+  print "    background: #fff; color: #333;\n";
+  print "  }\n";
+  print "  body, td {\n";
+  print "    font-family: verdana, sans-serif;\n";
+  print "    font-size: 11px;\n";
+  print "  }\n";
+  print "  td {\n";
+  print "    border-bottom: 1px dotted #999;\n";
+  print "  }\n";
+  print "  h1 {\n";
+  print "    color: #999;\n";
+  print "  }\n";
+  print "  pre {\n";
+  print "    white-space: pre-wrap;\n";
+  print "    background: #ccc; color: #000;\n";
+  print "    margin: 6px; padding: 6px;\n";
+  print "  }\n";
+  print "</style>\n";
+  print "</head>\n";
+  print "<body>\n";
+}
+
+sub _pretty_html_footer {
+  my $self   = shift;
+  my $footer = shift;
+
+  if ($footer) {
+    $self->{_html_footer} = $footer;
+
+    return;
+  }
+
+  if ( $self->{_html_footer} ) {
+    print $self->{_html_footer};
+
+    return;
+  }
+
+  my @time = localtime();
+  my $time = sprintf(
+    '%i-%02d-%02d %02d:%02d:%02d %s',
+    $time[5] + 1900, $time[4] + 1, $time[3],
+    $time[2], $time[1], $time[0],
+    POSIX::strftime( '%Z', @time )
+  );
+
+  print "<p>$time</p>\n";
+  print "</body>\n";
+  print "</html>\n";
 }
 
 1;
@@ -490,7 +682,7 @@ http://dev.perl.org/licenses/
 
 =head1 SEE ALSO
 
-L<File::HomeDir>, L<File::Type>, L<Net::Server::PreFork>.
+L<File::HomeDir>, L<Media::Type::Simple>, L<Net::Server::PreFork>.
 
 This module extends L<HTTP::Server::Simple::Mason>.
 
