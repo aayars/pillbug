@@ -56,7 +56,7 @@ do {
 
       return clone $Media::Type::Simple::Default;
     }
-  }
+    }
 };
 
 use base qw| HTTP::Server::Simple::Mason |;
@@ -173,9 +173,9 @@ sub pretty_html_footer {
   my @time = localtime();
   my $time = sprintf(
     '%i-%02d-%02d %02d:%02d:%02d %s',
-    $time[5] + 1900, $time[4] + 1, $time[3],
-    $time[2], $time[1], $time[0],
-    POSIX::strftime( '%Z', @time )
+    $time[5] + 1900,
+    $time[4] + 1,
+    $time[3], $time[2], $time[1], $time[0], POSIX::strftime( '%Z', @time )
   );
 
   print "<p>$time</p>\n";
@@ -373,21 +373,19 @@ sub _handle_directory_request {
       my $ext = $path;
       $ext =~ s/.*\.//;
       my $o = Media::Type::Simple->__new();
-      eval {
-        $type = $o->type_from_ext($ext);
-      };
+      eval { $type = $o->type_from_ext($ext); };
       $type ||= "application/octet-stream";
       $size = $stat[7];
     }
 
     $path =~ s/^$conf{comp_root}$compPath\///;
 
-    my @time = localtime($stat[9]);
+    my @time = localtime( $stat[9] );
     my $time = sprintf(
       '%i-%02d-%02d %02d:%02d:%02d %s',
-      $time[5] + 1900, $time[4] + 1, $time[3],
-      $time[2], $time[1], $time[0],
-      POSIX::strftime( '%Z', @time )
+      $time[5] + 1900,
+      $time[4] + 1,
+      $time[3], $time[2], $time[1], $time[0], POSIX::strftime( '%Z', @time )
     );
 
     print "  <tr>\n";
@@ -412,11 +410,9 @@ sub _handle_document_request {
 
   my $ext = $fsPath;
   $ext =~ s/.*\.//;
-  my $o    = Media::Type::Simple->__new();
+  my $o = Media::Type::Simple->__new();
   my $type;
-  eval {
-    $type = $o->type_from_ext($ext);
-  };
+  eval { $type = $o->type_from_ext($ext); };
   $type ||= "application/octet-stream";
 
   my @out;
@@ -536,7 +532,8 @@ sub handle_request {
   }
 
   eval {
-    if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) ) {
+    if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) )
+    {
       $self->_handle_mason_request( $r, $fsPath, $compPath );
 
     } elsif ( $self->allow_index && -d $fsPath ) {
@@ -551,7 +548,7 @@ sub handle_request {
     }
   };
 
-  if ( $@ ) {
+  if ($@) {
     warn $@;
   }
 }
@@ -598,7 +595,7 @@ Do it in Perl:
   # $server->docroot("/tmp/foo");
 
   #
-  # See docs for further options
+  # See docs or "pillbug -h" for further options
   #
 
   $server->run;
@@ -703,8 +700,8 @@ Currently, several brutish hacks are employed to work around minor
 issues in modules which Pillbug needs. These hacks will need to go
 away and/or be revisited over time.
 
-If you find something which isn't working as advertised, please let
-me know and I will try to remedy the problem.
+Please use the CPAN RT system or contact me if you find something
+which isn't working as advertised.
 
 =head1 VERSION
 
