@@ -5,13 +5,10 @@ use warnings;
 
 use base qw| HTML::Mason::CGIHandler |;
 
-#
-# CGIHandler does funny things with eval before we can check on the
-# result code, which makes it hard or impossible to reliably report
-# on errors.
-#
-# Avoid this by delegating to H::M::R's exec method instead.
-#
+### CGIHandler evals stuff before we can check on the result code,
+### which can make it hard or impossible to trap specific errors.
+###
+### Avoid this by delegating to H~::M~::Request's exec method instead.
 sub exec {
   my $self = shift;
 
@@ -28,23 +25,19 @@ use warnings;
 use File::HomeDir;
 use Media::Type::Simple;
 
-#
-# Media::Type::Simple's internal use of a cached filehandle makes
-# it not usable when forking.
-#
-# Sadly, Media::Type::Simple is currently the best thing going on CPAN
-# in terms of guessing MIME types from file extensions, so... until
-# its author applies a fix for this very common problem (or something
-# better comes along), I am adapting Jos Boumans's workaround from
-# rt.cpan.org #46474:
-#
+### Media::Type::Simple's internal use of a cached filehandle makes
+### it not usable when forking, and its internal use of private globals
+### makes it hard to subclass.
+###
+### Sadly, Media::Type::Simple is currently the best thing going on CPAN
+### in terms of guessing MIME types from file extensions, so... until
+### its author applies a fix for this very common problem (or something
+### better comes along), I am adapting Jos Boumans's workaround from
+### rt.cpan.org #46474:
 do {
   no strict "refs";
-  no warnings "redefine";
 
-  ${"Media::Type::Simple::Default"} = undef;
-
-  *{"Media::Type::Simple::new"} = sub {
+  *{"Media::Type::Simple::__new"} = sub {
     my $class = shift;
     my $self = { types => {}, extens => {}, };
 
@@ -278,6 +271,18 @@ sub _handle_mason_request {
   my $r = HTML::Mason::FakeApache->new( cgi => $cgi );
   my $buffer;
 
+  ###
+  ### Brutal and tempoorary workaround for undef warnings caused
+  ### by anonymous components calling other components.
+  ###
+  ### https://rt.cpan.org/Public/Bug/Display.html?id=55159
+  do {
+    no strict "refs";
+    no warnings "redefine";
+
+    *{"HTML::Mason::Component::dir_path"} = sub { return "" };
+  };
+
   eval {
     my $m = $self->mason_handler;
 
@@ -367,7 +372,7 @@ sub _handle_directory_request {
     } else {
       my $ext = $path;
       $ext =~ s/.*\.//;
-      my $o = Media::Type::Simple->new();
+      my $o = Media::Type::Simple->__new();
       eval {
         $type = $o->type_from_ext($ext);
       };
@@ -407,7 +412,7 @@ sub _handle_document_request {
 
   my $ext = $fsPath;
   $ext =~ s/.*\.//;
-  my $o    = Media::Type::Simple->new();
+  my $o    = Media::Type::Simple->__new();
   my $type;
   eval {
     $type = $o->type_from_ext($ext);
@@ -494,7 +499,8 @@ sub _handle_directory_redirect {
 }
 
 #
-# Adapted from H::S::S::Mason
+# Override HTTP::Server::Simple::Mason to also deal with document requests,
+# directory listings, and 404s
 #
 sub handle_request {
   my $self = shift;
@@ -530,8 +536,7 @@ sub handle_request {
   }
 
   eval {
-    if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) )
-    {
+    if ( $compPath =~ /$ext$/ && $m->interp->comp_exists($compPath) ) {
       $self->_handle_mason_request( $r, $fsPath, $compPath );
 
     } elsif ( $self->allow_index && -d $fsPath ) {
@@ -546,8 +551,8 @@ sub handle_request {
     }
   };
 
-  if ($@) {
-    return $self->_handle_error( $r, $@ );
+  if ( $@ ) {
+    warn $@;
   }
 }
 
@@ -558,7 +563,7 @@ __END__
 
 =head1 NAME
 
-Devel::Pillbug - Tiny HTML::Mason server
+Devel::Pillbug - Stand-alone HTML::Mason-enabled server
 
 =head1 SYNOPSIS
 
@@ -592,17 +597,22 @@ Do it in Perl:
   #
   # $server->docroot("/tmp/foo");
 
+  #
+  # See docs for further options
+  #
+
   $server->run;
 
 =head1 DESCRIPTION
 
-Devel::Pillbug is a tiny embedded L<HTML::Mason> server, based on
+Devel::Pillbug is a stand-alone L<HTML::Mason> server, extending
 L<HTTP::Server::Simple::Mason>. It is designed for zero configuration
 and easy install from CPAN.
 
 The "public_html" or "Sites" directory of the user who launched the
 process will be used for the default document root. Files ending
-in "html" are treated as Mason components.
+in "html" are treated as Mason components. These and other behaviors
+may be overridden as needed.
 
 =head1 METHODS
 
@@ -665,7 +675,7 @@ Sets this to the received state, if supplied as an argument.
 
 =item * $self->pretty_html_header($fragment)
 
-Returns the HTML fragment used for everything up to and including
+Prints the HTML fragment used for everything up to and including
 the "<body>" tag of internally-generated documents (errors and
 directory listings).
 
@@ -673,7 +683,7 @@ Sets the fragment to the received string, if supplied as an argument.
 
 =item * $self->pretty_html_footer($fragment)
 
-Returns the HTML fragment used for everything below and including
+Prints the HTML fragment used for everything below and including
 the "</body>" tag of internally-generated documents.
 
 Sets the fragment to the received string, if supplied as an argument.
@@ -684,6 +694,17 @@ Sets the fragment to the received string, if supplied as an argument.
 
 The document root must exist and be readable, and Devel::Pillbug
 must be able to bind to its listen port (default 8080).
+
+=head1 BUGS
+
+Absolutely...
+
+Currently, several brutish hacks are employed to work around minor
+issues in modules which Pillbug needs. These hacks will need to go
+away and/or be revisited over time.
+
+If you find something which isn't working as advertised, please let
+me know and I will try to remedy the problem.
 
 =head1 VERSION
 
