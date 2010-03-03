@@ -116,6 +116,83 @@ sub handler_class {
 #
 #
 #
+sub pretty_html_header {
+  my $self   = shift;
+  my $header = shift;
+
+  if ($header) {
+    $self->{_html_header} = $header;
+
+    return;
+  }
+
+  if ( defined $self->{_html_header} ) {
+    print $self->{_html_header};
+
+    return;
+  }
+
+  print "<html>\n";
+  print "<head>\n";
+  print "<style>\n";
+  print "  body {\n";
+  print "    background: #fff; color: #333;\n";
+  print "  }\n";
+  print "  body, td {\n";
+  print "    font-family: verdana, sans-serif;\n";
+  print "    font-size: 11px;\n";
+  print "  }\n";
+  print "  td {\n";
+  print "    border-bottom: 1px dotted #999;\n";
+  print "  }\n";
+  print "  h1 {\n";
+  print "    color: #999;\n";
+  print "  }\n";
+  print "  pre {\n";
+  print "    white-space: pre-wrap;\n";
+  print "    background: #ccc; color: #000;\n";
+  print "    margin: 6px; padding: 6px;\n";
+  print "  }\n";
+  print "</style>\n";
+  print "</head>\n";
+  print "<body>\n";
+}
+
+#
+#
+#
+sub pretty_html_footer {
+  my $self   = shift;
+  my $footer = shift;
+
+  if ($footer) {
+    $self->{_html_footer} = $footer;
+
+    return;
+  }
+
+  if ( $self->{_html_footer} ) {
+    print $self->{_html_footer};
+
+    return;
+  }
+
+  my @time = localtime();
+  my $time = sprintf(
+    '%i-%02d-%02d %02d:%02d:%02d %s',
+    $time[5] + 1900, $time[4] + 1, $time[3],
+    $time[2], $time[1], $time[0],
+    POSIX::strftime( '%Z', @time )
+  );
+
+  print "<p>$time</p>\n";
+  print "</body>\n";
+  print "</html>\n";
+}
+
+#
+#
+#
 sub docroot {
   my $self    = shift;
   my $docroot = shift;
@@ -255,7 +332,7 @@ sub _handle_directory_request {
   print "Content-Type: text/html\r\n";
   print "\r\n";
 
-  $self->_pretty_html_header();
+  $self->pretty_html_header();
 
   print "<h1>Index of $compPath</h1>\n";
 
@@ -318,7 +395,7 @@ sub _handle_directory_request {
 
   print "</table>\n";
 
-  $self->_pretty_html_footer();
+  $self->pretty_html_footer();
 }
 
 sub _handle_document_request {
@@ -367,12 +444,12 @@ sub _handle_notfound_request {
   print "Content-Type: text/html\r\n";
   print "\r\n";
 
-  $self->_pretty_html_header();
+  $self->pretty_html_header();
 
   print "<h1>Not Found</h1>\n";
   print "<p>The requested URL $compPath was not found on this server.\n";
 
-  $self->_pretty_html_footer();
+  $self->pretty_html_footer();
 }
 
 sub _handle_error {
@@ -389,13 +466,13 @@ sub _handle_error {
   print "Content-type: text/html\r\n";
   print "\r\n";
 
-  $self->_pretty_html_header();
+  $self->pretty_html_header();
 
   print "<h1>Internal Server Error</h1>\n";
   print "<p>The server could not complete your request. The error was:</p>\n";
   print "<pre>$err</pre>\n";
 
-  $self->_pretty_html_footer();
+  $self->pretty_html_footer();
 }
 
 sub _handle_directory_redirect {
@@ -408,12 +485,12 @@ sub _handle_directory_redirect {
   print "Location: $url\r\n";
   print "\r\n";
 
-  $self->_pretty_html_header();
+  $self->pretty_html_header();
 
   print "<h1>Moved</h1>\n";
   print "<p>The document is available <a href=\"$url\">here</a>.</p>\n";
 
-  $self->_pretty_html_footer();
+  $self->pretty_html_footer();
 }
 
 #
@@ -474,77 +551,6 @@ sub handle_request {
   }
 }
 
-sub _pretty_html_header {
-  my $self   = shift;
-  my $header = shift;
-
-  if ($header) {
-    $self->{_html_header} = $header;
-
-    return;
-  }
-
-  if ( defined $self->{_html_header} ) {
-    print $self->{_html_header};
-
-    return;
-  }
-
-  print "<html>\n";
-  print "<head>\n";
-  print "<style>\n";
-  print "  body {\n";
-  print "    background: #fff; color: #333;\n";
-  print "  }\n";
-  print "  body, td {\n";
-  print "    font-family: verdana, sans-serif;\n";
-  print "    font-size: 11px;\n";
-  print "  }\n";
-  print "  td {\n";
-  print "    border-bottom: 1px dotted #999;\n";
-  print "  }\n";
-  print "  h1 {\n";
-  print "    color: #999;\n";
-  print "  }\n";
-  print "  pre {\n";
-  print "    white-space: pre-wrap;\n";
-  print "    background: #ccc; color: #000;\n";
-  print "    margin: 6px; padding: 6px;\n";
-  print "  }\n";
-  print "</style>\n";
-  print "</head>\n";
-  print "<body>\n";
-}
-
-sub _pretty_html_footer {
-  my $self   = shift;
-  my $footer = shift;
-
-  if ($footer) {
-    $self->{_html_footer} = $footer;
-
-    return;
-  }
-
-  if ( $self->{_html_footer} ) {
-    print $self->{_html_footer};
-
-    return;
-  }
-
-  my @time = localtime();
-  my $time = sprintf(
-    '%i-%02d-%02d %02d:%02d:%02d %s',
-    $time[5] + 1900, $time[4] + 1, $time[3],
-    $time[2], $time[1], $time[0],
-    POSIX::strftime( '%Z', @time )
-  );
-
-  print "<p>$time</p>\n";
-  print "</body>\n";
-  print "</html>\n";
-}
-
 1;
 __END__
 
@@ -595,8 +601,8 @@ L<HTTP::Server::Simple::Mason>. It is designed for zero configuration
 and easy install from CPAN.
 
 The "public_html" or "Sites" directory of the user who launched the
-process will be used for the document root. Files ending in "html"
-are treated as Mason components.
+process will be used for the default document root. Files ending
+in "html" are treated as Mason components.
 
 =head1 METHODS
 
@@ -607,7 +613,7 @@ inherited methods.
 
 =over 4
 
-=item * $class->net_server($newServerType);
+=item * $class->net_server($newServerType)
 
 Returns the currently active L<Net::Server> subclass.
 
@@ -616,7 +622,7 @@ is supplied as an argument.
 
 Default value is L<Net::Server::PreFork>.
 
-=item * $class->handler_class($newHandlerClass);
+=item * $class->handler_class($newHandlerClass)
 
 Returns the currently active L<HTML::Mason::Request> subclass.
 
@@ -631,31 +637,46 @@ Default value is L<Devel::Pillbug::MasonHandler>.
 
 =over 4
 
-=item * $self->docroot($docroot);
+=item * $self->docroot($docroot)
 
 Returns the currently active docroot.
 
 The server will set its docroot to the received absolute path, if
 supplied as an argument.
 
-=item * $self->index_name($name);
+=item * $self->index_name($name)
 
 Returns currently used index name, without extension (default is
 "index").
 
 Sets this to the received name, if supplied as an argument.
 
-=item * $self->comp_ext($extension);
+=item * $self->comp_ext($extension)
 
 Sets the file extension used for Mason components (default is "html")
 
-=item * $self->allow_index($bool);
+=item * $self->allow_index($bool)
 
 Returns the current allowed state for directory indexes.
 
 Sets this to the received state, if supplied as an argument.
 
 0 = Off, 1 = On
+
+=item * $self->pretty_html_header($fragment)
+
+Returns the HTML fragment used for everything up to and including
+the "<body>" tag of internally-generated documents (errors and
+directory listings).
+
+Sets the fragment to the received string, if supplied as an argument.
+
+=item * $self->pretty_html_footer($fragment)
+
+Returns the HTML fragment used for everything below and including
+the "</body>" tag of internally-generated documents.
+
+Sets the fragment to the received string, if supplied as an argument.
 
 =back
 
